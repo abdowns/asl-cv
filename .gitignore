@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Data / models / logs (large or generated artifacts)
+data/
+dataset/
+models/
+runs/
+*.log
+*.ckpt
+*.pt
+*.pth
+*.onnx
+*.mlmodel
+*.mlpackage
+
+# OS
+.DS_Store
