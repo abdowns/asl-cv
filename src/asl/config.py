@@ -1,11 +1,14 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from pathlib import Path
 
 import torch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DATASET_DIR = PROJECT_ROOT / "dataset"
+VIDEOS_DIR = DATASET_DIR / "videos"
 DATA_DIR = PROJECT_ROOT / "data"
-NSLT_PATH = PROJECT_ROOT / "dataset" / "nslt_100.json"
 
 
 @dataclass
@@ -17,3 +20,11 @@ class Config:
     lr: float = 1e-3
     seed: int = 42
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
+
+    @property
+    def num_classes(self) -> int:
+        return self.subset
+
+    @property
+    def nslt_path(self) -> Path:
+        return DATASET_DIR / f"nslt_{self.subset}.json"
