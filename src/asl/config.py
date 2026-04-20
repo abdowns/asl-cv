@@ -8,13 +8,22 @@ import torch
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATASET_DIR = PROJECT_ROOT / "dataset"
 VIDEOS_DIR = DATASET_DIR / "videos"
-DATA_DIR = PROJECT_ROOT / "data"
+PROCESSED_DIR = PROJECT_ROOT / "data" / "processed"
+MODELS_DIR = PROJECT_ROOT / "models" / "mediapipe"
+
+NUM_HAND_LANDMARKS = 21
+# indices into mediapipe pose's 33 landmarks: nose, shoulders, elbows, wrists, hips
+POSE_KEEP = [0, 11, 12, 13, 14, 15, 16, 23, 24]
+NUM_POSE_LANDMARKS = len(POSE_KEEP)
+NUM_POINTS = 2 * NUM_HAND_LANDMARKS + NUM_POSE_LANDMARKS
 
 
 @dataclass
 class Config:
     subset: int = 100
     num_frames: int = 32
+    crop_size: int = 96
+
     batch_size: int = 16
     epochs: int = 50
     lr: float = 1e-3
