@@ -16,21 +16,36 @@ from asl.config import (
 )
 from asl.data.wlasl import Instance
 
+MAX_RAW_FRAMES = 96
+
 FEATURES_DIR = PROCESSED_DIR / "features"
 
 
 def read_frames(inst: Instance) -> tuple[np.ndarray, float]:
     cap = cv2.VideoCapture(str(inst.video_path))
-    fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+    if not cap.isOpened():
+        raise IOError(f"cannot open {inst.video_path}")
+    fps = cap.get(cv2.CAP_PROP_FPS) or inst.fps or 25.0
     frames = []
+    idx = 0
+    start = max(inst.frame_start, 1)
+    end = inst.frame_end
     while True:
         ok, frame = cap.read()
         if not ok:
+            break
+        idx += 1
+        if idx < start:
+            continue
+        if end > 0 and idx > end:
             break
         frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
     cap.release()
     if not frames:
         raise IOError(f"no frames decoded from {inst.video_path}")
+    if len(frames) > MAX_RAW_FRAMES:
+        keep = np.linspace(0, len(frames) - 1, MAX_RAW_FRAMES).astype(int)
+        frames = [frames[i] for i in keep]
     return np.stack(frames), float(fps)
 
 
@@ -115,7 +130,7 @@ class Extractor:
             "meta": json.dumps({
                 "video_id": inst.video_id, "gloss": inst.gloss,
                 "label": inst.label, "split": inst.split,
-                "fps": fps,
+                "fps": fps, "num_frames": T,
             }),
         }
 
