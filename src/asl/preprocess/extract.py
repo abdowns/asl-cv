@@ -17,8 +17,35 @@ from asl.config import (
 from asl.data.wlasl import Instance
 
 MAX_RAW_FRAMES = 96
+CROP_MARGIN = 0.35
 
 FEATURES_DIR = PROCESSED_DIR / "features"
+
+
+def _make_landmarkers():
+    from mediapipe.tasks import python as mp_python
+    from mediapipe.tasks.python import vision
+
+    hand = vision.HandLandmarker.create_from_options(
+        vision.HandLandmarkerOptions(
+            base_options=mp_python.BaseOptions(
+                model_asset_path=str(MODELS_DIR / "hand_landmarker.task")
+            ),
+            running_mode=vision.RunningMode.VIDEO,
+            num_hands=2,
+            min_hand_detection_confidence=0.3,
+            min_tracking_confidence=0.3,
+        )
+    )
+    pose = vision.PoseLandmarker.create_from_options(
+        vision.PoseLandmarkerOptions(
+            base_options=mp_python.BaseOptions(
+                model_asset_path=str(MODELS_DIR / "pose_landmarker_full.task")
+            ),
+            running_mode=vision.RunningMode.VIDEO,
+        )
+    )
+    return hand, pose
 
 
 def read_frames(inst: Instance) -> tuple[np.ndarray, float]:
@@ -53,39 +80,24 @@ def _crop_hand(frame: np.ndarray, pts_xy: np.ndarray, size: int) -> np.ndarray:
     h, w = frame.shape[:2]
     x0, y0 = pts_xy.min(axis=0)
     x1, y1 = pts_xy.max(axis=0)
-    side = max(x1 - x0, y1 - y0) * 1.5
+    side = max(x1 - x0, y1 - y0) * (1 + 2 * CROP_MARGIN)
+    side = max(side, 8)
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
-    x0, y0 = max(0, int(cx - side / 2)), max(0, int(cy - side / 2))
-    x1, y1 = min(w, int(cx + side / 2)), min(h, int(cy + side / 2))
-    crop = frame[y0:y1, x0:x1]
-    if crop.size == 0:
-        return np.zeros((size, size, 3), dtype=np.uint8)
+    x0, y0 = int(round(cx - side / 2)), int(round(cy - side / 2))
+    x1, y1 = int(round(cx + side / 2)), int(round(cy + side / 2))
+    pad_x0, pad_y0 = max(0, -x0), max(0, -y0)
+    pad_x1, pad_y1 = max(0, x1 - w), max(0, y1 - h)
+    crop = frame[max(0, y0):min(h, y1), max(0, x0):min(w, x1)]
+    if any((pad_x0, pad_y0, pad_x1, pad_y1)):
+        crop = cv2.copyMakeBorder(crop, pad_y0, pad_y1, pad_x0, pad_x1,
+                                  cv2.BORDER_CONSTANT, value=0)
     return cv2.resize(crop, (size, size), interpolation=cv2.INTER_AREA)
 
 
 class Extractor:
     def __init__(self, cfg: Config):
-        from mediapipe.tasks import python as mp_python
-        from mediapipe.tasks.python import vision
-
         self.cfg = cfg
-        self.hand = vision.HandLandmarker.create_from_options(
-            vision.HandLandmarkerOptions(
-                base_options=mp_python.BaseOptions(
-                    model_asset_path=str(MODELS_DIR / "hand_landmarker.task")
-                ),
-                running_mode=vision.RunningMode.VIDEO,
-                num_hands=2,
-            )
-        )
-        self.pose = vision.PoseLandmarker.create_from_options(
-            vision.PoseLandmarkerOptions(
-                base_options=mp_python.BaseOptions(
-                    model_asset_path=str(MODELS_DIR / "pose_landmarker_full.task")
-                ),
-                running_mode=vision.RunningMode.VIDEO,
-            )
-        )
+        self.hand, self.pose = _make_landmarkers()
 
     def extract(self, inst: Instance) -> dict:
         import mediapipe as mp
