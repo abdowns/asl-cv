@@ -34,6 +34,7 @@ class Config:
     num_frames: int = 32
     crop_size: int = 96
 
+    visual_stream: bool = True
     vit_patch: int = 16
     vit_dim: int = 192
     vit_depth: int = 4
@@ -66,5 +67,9 @@ class Config:
     def nslt_path(self) -> Path:
         return DATASET_DIR / f"nslt_{self.subset}.json"
 
-    def save(self, run_dir: Path) -> None:
-        (run_dir / "config.json").write_text(json.dumps(asdict(self)))
+    def save(self, path: Path) -> None:
+        path.write_text(json.dumps(asdict(self), indent=2))
+
+    @classmethod
+    def load(cls, path: Path) -> "Config":
+        return cls(**json.loads(path.read_text()))
