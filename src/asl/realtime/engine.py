@@ -17,39 +17,72 @@ class Prediction:
     label: int
     confidence: float
     top5: list[tuple[str, float]]
+    emitted: bool
 
 
 class StreamingRecognizer:
     def __init__(self, cfg: Config, model: torch.nn.Module,
-                 classes: dict[int, str], window: int = 64, stride: int = 8):
+                 classes: dict[int, str], window: int = 64, stride: int = 6,
+                 ema: float = 0.6, emit_threshold: float = 0.55,
+                 idle_reset_s: float = 1.0):
         self.cfg = cfg
         self.model = model.eval()
         self.device = torch.device(cfg.device)
         self.classes = classes
         self.window = window
         self.stride = stride
-        self.buffer: deque[tuple[np.ndarray, np.ndarray, bool, np.ndarray]] = \
-            deque(maxlen=window)
-        self._count = 0
+        self.ema = ema
+        self.emit_threshold = emit_threshold
+        self.idle_reset_s = idle_reset_s
+
+        self.landmarks: deque[np.ndarray] = deque(maxlen=window)
+        self.hand_masks: deque[np.ndarray] = deque(maxlen=window)
+        self.pose_oks: deque[bool] = deque(maxlen=window)
+        self.crops: deque[np.ndarray] = deque(maxlen=window)
+        self.probs: np.ndarray | None = None
+        self.last_emitted: int | None = None
+        self._since_infer = 0
+        self._last_hand_ts: float | None = None
 
     def reset(self) -> None:
-        self.buffer.clear()
-        self._count = 0
+        self.landmarks.clear()
+        self.hand_masks.clear()
+        self.pose_oks.clear()
+        self.crops.clear()
+        self.probs = None
+        self.last_emitted = None
+        self._since_infer = 0
+        self._last_hand_ts = None
 
     def add_frame(self, landmarks: np.ndarray, hand_mask: np.ndarray,
-                  pose_ok: bool, crops: np.ndarray) -> Prediction | None:
-        self.buffer.append((landmarks, hand_mask, pose_ok, crops))
-        self._count += 1
-        if len(self.buffer) < self.cfg.num_frames or self._count % self.stride:
+                  pose_ok: bool, crops: np.ndarray,
+                  timestamp: float) -> Prediction | None:
+        if hand_mask.any():
+            self._last_hand_ts = timestamp
+        elif (self._last_hand_ts is not None
+              and timestamp - self._last_hand_ts >= self.idle_reset_s):
+            self.probs = None
+            self.last_emitted = None
+
+        self.landmarks.append(landmarks)
+        self.hand_masks.append(hand_mask)
+        self.pose_oks.append(pose_ok)
+        self.crops.append(crops)
+
+        self._since_infer += 1
+        if (len(self.landmarks) < self.cfg.num_frames // 2
+                or self._since_infer < self.stride
+                or not any(m.any() for m in self.hand_masks)):
             return None
+        self._since_infer = 0
         return self._infer()
 
     @torch.no_grad()
     def _infer(self) -> Prediction:
-        lm = np.stack([f[0] for f in self.buffer])
-        hm = np.stack([f[1] for f in self.buffer])
-        pm = np.array([f[2] for f in self.buffer])
-        cr = np.stack([f[3] for f in self.buffer])
+        lm = np.stack(self.landmarks)
+        hm = np.stack(self.hand_masks)
+        pm = np.array(self.pose_oks)
+        cr = np.stack(self.crops)
 
         sel = sample_indices(len(lm), self.cfg.num_frames, train=False)
         feats = build_features(lm[sel], pm[sel])
@@ -66,11 +99,19 @@ class StreamingRecognizer:
                                device=self.device)
 
         probs = self.model(x_lm, x_cr, x_hm).softmax(dim=1)[0].cpu().numpy()
-        order = np.argsort(probs)[::-1]
+        self.probs = probs if self.probs is None else \
+            self.ema * self.probs + (1 - self.ema) * probs
+
+        order = np.argsort(self.probs)[::-1]
         top = int(order[0])
+        conf = float(self.probs[top])
+        emitted = conf >= self.emit_threshold and top != self.last_emitted
+        if emitted:
+            self.last_emitted = top
         return Prediction(
             gloss=self.classes[top],
             label=top,
-            confidence=float(probs[top]),
-            top5=[(self.classes[int(i)], float(probs[i])) for i in order[:5]],
+            confidence=conf,
+            top5=[(self.classes[int(i)], float(self.probs[i])) for i in order[:5]],
+            emitted=emitted,
         )
