@@ -6,13 +6,44 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import cv2
+import numpy as np
 import torch
 
-from asl.config import Config
+from asl.config import Config, NUM_HAND_LANDMARKS
 from asl.data.wlasl import load_class_list
 from asl.models.hybrid import build_model
 from asl.realtime.engine import StreamingRecognizer
 from asl.realtime.tracker import LiveTracker
+
+# Standard 21-point MediaPipe hand topology (thumb, index, middle, ring,
+# pinky chains plus the palm base) \u2014 hardcoded since this mediapipe build
+# only ships the Tasks API, not the legacy `solutions` drawing helpers.
+HAND_CONNECTIONS = [
+    (0, 1), (1, 2), (2, 3), (3, 4),
+    (0, 5), (5, 6), (6, 7), (7, 8),
+    (5, 9), (9, 10), (10, 11), (11, 12),
+    (9, 13), (13, 14), (14, 15), (15, 16),
+    (13, 17), (17, 18), (18, 19), (19, 20),
+    (0, 17),
+]
+HAND_COLORS = [(0, 220, 255), (255, 180, 0)]  # left, right
+
+
+def draw_hand_overlay(frame_bgr: np.ndarray, landmarks: np.ndarray,
+                       hand_mask: np.ndarray) -> None:
+    h, w = frame_bgr.shape[:2]
+    for slot in range(2):
+        if not hand_mask[slot]:
+            continue
+        off = slot * NUM_HAND_LANDMARKS
+        pts = landmarks[off:off + NUM_HAND_LANDMARKS]
+        px = [(int(x * w), int(y * h)) for x, y, _ in pts]
+        color = HAND_COLORS[slot]
+        for a, b in HAND_CONNECTIONS:
+            cv2.line(frame_bgr, px[a], px[b], color, 2, cv2.LINE_AA)
+        for x, y in px:
+            cv2.circle(frame_bgr, (x, y), 4, (255, 255, 255), -1, cv2.LINE_AA)
+            cv2.circle(frame_bgr, (x, y), 4, color, 1, cv2.LINE_AA)
 
 
 def main() -> None:
@@ -56,12 +87,7 @@ def main() -> None:
             if pred.emitted:
                 emitted_words = (emitted_words + [pred.gloss])[-8:]
 
-        h, w = frame_bgr.shape[:2]
-        for slot in range(2):
-            if not hand_mask[slot]:
-                continue
-            for x, y, _ in landmarks[slot * 21:(slot + 1) * 21]:
-                cv2.circle(frame_bgr, (int(x * w), int(y * h)), 3, (0, 255, 0), -1)
+        draw_hand_overlay(frame_bgr, landmarks, hand_mask)
 
         # Drawn every frame from the last known distribution so it stays on
         # screen between inference steps instead of flashing.
