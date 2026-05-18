@@ -49,6 +49,7 @@ def draw_hand_overlay(frame_bgr: np.ndarray, landmarks: np.ndarray,
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run", required=True)
+    parser.add_argument("--video", default=None)
     parser.add_argument("--camera", type=int, default=0)
     args = parser.parse_args()
 
@@ -63,7 +64,7 @@ def main() -> None:
     tracker = LiveTracker(cfg)
     recognizer = StreamingRecognizer(cfg, model, load_class_list())
 
-    cap = cv2.VideoCapture(args.camera)
+    cap = cv2.VideoCapture(args.video if args.video else args.camera)
     if not cap.isOpened():
         sys.exit("cannot open capture source")
 
@@ -75,9 +76,10 @@ def main() -> None:
         ok, frame_bgr = cap.read()
         if not ok:
             break
-        frame_bgr = cv2.flip(frame_bgr, 1)
+        frame_bgr = cv2.flip(frame_bgr, 1) if not args.video else frame_bgr
         rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-        ts_ms = int((time.time() - t0) * 1000)
+        ts_ms = int((time.time() - t0) * 1000) if not args.video \
+            else int(cap.get(cv2.CAP_PROP_POS_MSEC))
 
         landmarks, hand_mask, pose_ok, crops = tracker.process(rgb, ts_ms)
         pred = recognizer.add_frame(landmarks, hand_mask, pose_ok, crops)
@@ -108,6 +110,13 @@ def main() -> None:
         if cv2.waitKey(1) & 0xFF == 27:
             break
 
+    if args.video:
+        print("emitted:", emitted_words)
+        if recognizer.probs is not None:
+            order = np.argsort(recognizer.probs)[::-1][:5]
+            classes = load_class_list()
+            print("final top5:", [(classes[int(i)], round(float(recognizer.probs[i]), 3))
+                                  for i in order])
     cap.release()
     cv2.destroyAllWindows()
     tracker.close()
