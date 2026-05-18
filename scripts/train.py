@@ -19,12 +19,15 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--subset", type=int, default=100, choices=[100, 300, 1000, 2000])
     parser.add_argument("--visual-stream", choices=["on", "off"], default="on")
+    parser.add_argument("--rnn", choices=["gru", "lstm"], default="gru")
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=None)
     parser.add_argument("--name", default=None)
     args = parser.parse_args()
 
-    cfg = Config(subset=args.subset, visual_stream=args.visual_stream == "on")
+    cfg = Config(subset=args.subset,
+                 visual_stream=args.visual_stream == "on",
+                 rnn_type=args.rnn)
     if args.epochs:
         cfg.epochs = args.epochs
     if args.batch_size:
@@ -36,7 +39,7 @@ def main() -> None:
     train_ds = WLASLDataset(cfg, splits["train"], train=True)
     val_ds = WLASLDataset(cfg, splits["val"], train=False)
     print(f"device={cfg.device} train={len(train_ds)} val={len(val_ds)} "
-          f"visual={cfg.visual_stream}")
+          f"visual={cfg.visual_stream} rnn={cfg.rnn_type}")
 
     train_loader = DataLoader(train_ds, batch_size=cfg.batch_size, shuffle=True,
                               num_workers=cfg.num_workers, drop_last=True,
@@ -51,7 +54,7 @@ def main() -> None:
 
     name = args.name or (f"wlasl{cfg.subset}_"
                          f"{'hybrid' if cfg.visual_stream else 'landmark'}_"
-                         f"{time.strftime('%m%d_%H%M')}")
+                         f"{cfg.rnn_type}_{time.strftime('%m%d_%H%M')}")
     trainer = Trainer(cfg, model, train_loader, val_loader, RUNS_DIR / name)
     result = trainer.fit()
     print(f"done: {result} -> {RUNS_DIR / name}")

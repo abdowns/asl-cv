@@ -35,6 +35,7 @@ class Config:
     crop_size: int = 96
 
     visual_stream: bool = True
+    rnn_type: str = "gru"
     vit_patch: int = 16
     vit_dim: int = 192
     vit_depth: int = 4
@@ -43,8 +44,8 @@ class Config:
     fusion_dim: int = 256
     tcn_channels: int = 256
     tcn_blocks: int = 4
-    gru_hidden: int = 256
-    gru_layers: int = 2
+    rnn_hidden: int = 256
+    rnn_layers: int = 2
     dropout: float = 0.3
 
     batch_size: int = 32
