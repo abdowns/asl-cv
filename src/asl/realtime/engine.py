@@ -24,7 +24,7 @@ class StreamingRecognizer:
     def __init__(self, cfg: Config, model: torch.nn.Module,
                  classes: dict[int, str], window: int = 64, stride: int = 6,
                  ema: float = 0.6, emit_threshold: float = 0.55,
-                 idle_reset_s: float = 1.0):
+                 idle_reset_frames: int = 30):
         self.cfg = cfg
         self.model = model.eval()
         self.device = torch.device(cfg.device)
@@ -33,7 +33,7 @@ class StreamingRecognizer:
         self.stride = stride
         self.ema = ema
         self.emit_threshold = emit_threshold
-        self.idle_reset_s = idle_reset_s
+        self.idle_reset_frames = idle_reset_frames
 
         self.landmarks: deque[np.ndarray] = deque(maxlen=window)
         self.hand_masks: deque[np.ndarray] = deque(maxlen=window)
@@ -42,7 +42,7 @@ class StreamingRecognizer:
         self.probs: np.ndarray | None = None
         self.last_emitted: int | None = None
         self._since_infer = 0
-        self._last_hand_ts: float | None = None
+        self._idle = 0
 
     def reset(self) -> None:
         self.landmarks.clear()
@@ -52,17 +52,17 @@ class StreamingRecognizer:
         self.probs = None
         self.last_emitted = None
         self._since_infer = 0
-        self._last_hand_ts = None
+        self._idle = 0
 
     def add_frame(self, landmarks: np.ndarray, hand_mask: np.ndarray,
-                  pose_ok: bool, crops: np.ndarray,
-                  timestamp: float) -> Prediction | None:
-        if hand_mask.any():
-            self._last_hand_ts = timestamp
-        elif (self._last_hand_ts is not None
-              and timestamp - self._last_hand_ts >= self.idle_reset_s):
-            self.probs = None
-            self.last_emitted = None
+                  pose_ok: bool, crops: np.ndarray) -> Prediction | None:
+        if not hand_mask.any():
+            self._idle += 1
+            if self._idle >= self.idle_reset_frames:
+                self.probs = None
+                self.last_emitted = None
+        else:
+            self._idle = 0
 
         self.landmarks.append(landmarks)
         self.hand_masks.append(hand_mask)

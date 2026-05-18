@@ -14,6 +14,7 @@ class LiveTracker:
         from mediapipe.tasks.python import vision
 
         self.cfg = cfg
+        self._last_ts = -1
         self.hand = vision.HandLandmarker.create_from_options(
             vision.HandLandmarkerOptions(
                 base_options=mp_python.BaseOptions(
@@ -34,8 +35,11 @@ class LiveTracker:
             )
         )
 
-    def process(self, frame_rgb: np.ndarray, ts_ms: float):
+    def process(self, frame_rgb: np.ndarray, ts_ms: int):
         import mediapipe as mp
+
+        ts_ms = max(ts_ms, self._last_ts + 1)
+        self._last_ts = ts_ms
 
         S = self.cfg.crop_size
         landmarks = np.zeros((NUM_POINTS, 3), dtype=np.float32)
@@ -43,8 +47,8 @@ class LiveTracker:
         crops = np.zeros((2, S, S, 3), dtype=np.uint8)
 
         mp_img = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
-        hand_res = self.hand.detect_for_video(mp_img, int(ts_ms))
-        pose_res = self.pose.detect_for_video(mp_img, int(ts_ms))
+        hand_res = self.hand.detect_for_video(mp_img, ts_ms)
+        pose_res = self.pose.detect_for_video(mp_img, ts_ms)
         h, w = frame_rgb.shape[:2]
 
         for lms, handed in zip(hand_res.hand_landmarks, hand_res.handedness):
