@@ -16,7 +16,7 @@ from asl.realtime.engine import StreamingRecognizer
 from asl.realtime.tracker import LiveTracker
 
 # Standard 21-point MediaPipe hand topology (thumb, index, middle, ring,
-# pinky chains plus the palm base) \u2014 hardcoded since this mediapipe build
+# pinky chains plus the palm base) — hardcoded since this mediapipe build
 # only ships the Tasks API, not the legacy `solutions` drawing helpers.
 HAND_CONNECTIONS = [
     (0, 1), (1, 2), (2, 3), (3, 4),
@@ -55,10 +55,11 @@ def main() -> None:
 
     run_dir = Path(args.run)
     cfg = Config.load(run_dir / "config.json")
-    device = torch.device(cfg.device)
+    if cfg.device == "cuda" and not torch.cuda.is_available():
+        cfg.device = "mps" if torch.backends.mps.is_available() else "cpu"
 
-    model = build_model(cfg).to(device)
-    state = torch.load(run_dir / "best.pt", map_location=device)
+    model = build_model(cfg).to(cfg.device)
+    state = torch.load(run_dir / "best.pt", map_location=cfg.device)
     model.load_state_dict(state["model"])
 
     tracker = LiveTracker(cfg)

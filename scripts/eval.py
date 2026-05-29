@@ -24,6 +24,8 @@ def main() -> None:
 
     run_dir = Path(args.run)
     cfg = Config.load(run_dir / "config.json")
+    cfg.device = cfg.device if cfg.device != "cuda" or torch.cuda.is_available() \
+        else ("mps" if torch.backends.mps.is_available() else "cpu")
     device = torch.device(cfg.device)
 
     splits = split_index(load_index(cfg))
@@ -31,7 +33,7 @@ def main() -> None:
     loader = DataLoader(ds, batch_size=cfg.batch_size, num_workers=cfg.num_workers)
 
     model = build_model(cfg).to(device)
-    state = torch.load(run_dir / args.ckpt, map_location="cpu")
+    state = torch.load(run_dir / args.ckpt, map_location=device)
     model.load_state_dict(state["model"])
     model.eval()
     print(f"loaded {args.ckpt} (epoch {state.get('epoch')}), "
