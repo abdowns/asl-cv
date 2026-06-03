@@ -1,7 +1,7 @@
 [project]
 name = "asl-cv"
 version = "0.1.0"
-description = "Word-level ASL recognition from video"
+description = "Word-level ASL recognition and coaching from live video (WLASL, from-scratch hybrid ViT+TCN+GRU)"
 requires-python = ">=3.10,<3.13"
 
 [tool.setuptools.packages.find]
