@@ -67,9 +67,17 @@ def evaluate_attempt(attempt_landmarks: np.ndarray, attempt_pose_mask: np.ndarra
     loc_errs, move_errs, shape_errs = [], [], []
     dy_sum = dx_sum = 0.0
 
-    for slot in (0, 1):
+    for slot, name in ((0, "left hand"), (1, "right hand")):
         att_p, ref_p = _present(att, slot), _present(ref, slot)
-        if not att_p.any() or not ref_p.any():
+        if not ref_p.any():
+            continue
+        if not att_p.any():
+            tips.append(f"Your {name} should be signing too — the reference "
+                        f"uses both hands." if _present(ref, 1 - slot).any()
+                        else f"This sign is made with the {name}.")
+            loc_errs.append(1.0)
+            move_errs.append(1.0)
+            shape_errs.append(np.pi / 2)
             continue
 
         off = slot * NUM_HAND_LANDMARKS
@@ -85,6 +93,12 @@ def evaluate_attempt(attempt_landmarks: np.ndarray, attempt_pose_mask: np.ndarra
             va = np.diff(wrist_a[both], axis=0)
             vr = np.diff(wrist_r[both], axis=0)
             move_errs.append(float(np.linalg.norm(va - vr, axis=1).mean()))
+            ea, er = np.linalg.norm(va, axis=1).sum(), np.linalg.norm(vr, axis=1).sum()
+            if er > 0.05 and ea < 0.5 * er:
+                tips.append(f"Make the {name} movement bigger — yours is "
+                            f"much smaller than the reference.")
+            elif er > 0.05 and ea > 2.0 * er:
+                tips.append(f"Keep the {name} movement more compact.")
 
             ang_a = _hand_angle_seq(att, slot)[ai][both]
             ang_r = _hand_angle_seq(ref, slot)[ri][both]
@@ -92,7 +106,7 @@ def evaluate_attempt(attempt_landmarks: np.ndarray, attempt_pose_mask: np.ndarra
 
     location = _score(np.mean(loc_errs) if loc_errs else 1.0, tolerance=0.25)
     movement = _score(np.mean(move_errs) if move_errs else 1.0, tolerance=0.06)
-    handshape = _score(np.mean(shape_errs) if shape_errs else 1.0,
+    handshape = _score(np.mean(shape_errs) if shape_errs else np.pi / 2,
                        tolerance=0.35)
 
     if location < 60:
